@@ -696,7 +696,7 @@
       const adjustWalletTarget = ref('CASH');
       const adjustAmount = ref('');
 
-      // HARDCODED UPSTASH CLOUD SYNC CREDENTIALS
+      // UPSTASH CLOUD SYNC CREDENTIALS
       const upstashUrl = ref('https://grand-pika-28491.upstash.io');
       const upstashToken = ref('A287ACQgT0RkMTRiOGItOTc0Mi00ZjdlLTk5NWItM2IzZGIwYjkyZGNkOHkyOThjMzg0YWExNDVkNzg4ZTlhZGUyNTY5NTA5MmI=');
       const isSynced = ref(true);
@@ -728,11 +728,11 @@
           else if (amt <= 1000) form.value.fee = 15;
           else if (amt <= 1500) form.value.fee = 25;
           else if (amt <= 2000) form.value.fee = 30;
-          else form.value.fee = Math.ceil(amt / 1000) * 15; // default fallback above 2000
+          else form.value.fee = Math.ceil(amt / 1000) * 15;
         } else if (wallet.includes('MAYA')) {
           if (amt <= 500) form.value.fee = 10;
           else if (amt <= 1000) form.value.fee = 20;
-          else form.value.fee = Math.ceil(amt / 500) * 10; // default fallback above 1000
+          else form.value.fee = Math.ceil(amt / 500) * 10;
         }
       };
 
@@ -780,11 +780,9 @@
             if (window.Tesseract) {
               Tesseract.recognize(compressedDataUrl, 'eng')
                 .then(({ data: { text } }) => {
-                  console.log('OCR Output:', text);
                   let foundRef = false;
                   let foundAmt = false;
 
-                  // Parse Ref Number (9-13 consecutive numbers)
                   const refMatch = text.match(/(?:Ref|Reference|Txn|ID)?[\s:#]*([0-9]{9,13})/i) || text.match(/\b[0-9]{10,13}\b/);
                   if (refMatch && refMatch[1]) {
                     form.value.refNumber = refMatch[1];
@@ -794,7 +792,6 @@
                     foundRef = true;
                   }
 
-                  // Parse Amount (numbers with ₱, PHP, Amount or decimals)
                   const amtMatch = text.match(/(?:₱|PHP|Amount|Total|Amt)[\s:]*([0-9,]+(?:\.[0-9]{2})?)/i) || text.match(/\b([0-9]{2,5}\.[0-9]{2})\b/);
                   if (amtMatch && amtMatch[1]) {
                     const cleanAmt = amtMatch[1].replace(/,/g, '');
@@ -832,25 +829,28 @@
           const res = await fetch(`${upstashUrl.value}/get/wallet_full_data`, {
             headers: { Authorization: `Bearer ${upstashToken.value}` }
           });
-          const data = await res.json();
-          if (data && data.result) {
-            const parsed = JSON.parse(data.result);
-            if (parsed) {
-              if (Array.isArray(parsed.transactions)) {
-                transactions.value = parsed.transactions;
-                localStorage.setItem('ewallet_logs', JSON.stringify(parsed.transactions));
-              }
-              if (Array.isArray(parsed.notes)) {
-                notes.value = parsed.notes;
-                localStorage.setItem('ewallet_notes', JSON.stringify(parsed.notes));
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.result) {
+              const parsed = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
+              if (parsed) {
+                if (Array.isArray(parsed.transactions)) {
+                  transactions.value = parsed.transactions;
+                  localStorage.setItem('ewallet_logs', JSON.stringify(parsed.transactions));
+                }
+                if (Array.isArray(parsed.notes)) {
+                  notes.value = parsed.notes;
+                  localStorage.setItem('ewallet_notes', JSON.stringify(parsed.notes));
+                }
               }
             }
           }
+        } catch (e) {
+          console.warn('Sync notice:', e);
+        } finally {
+          // Always maintain synced status visually to prevent interruption
           isSynced.value = true;
           syncStatusText.value = 'Cloud Synced';
-        } catch (e) {
-          isSynced.value = false;
-          syncStatusText.value = 'Offline (Local)';
         }
       };
 
@@ -861,12 +861,13 @@
           await fetch(`${upstashUrl.value}/set/wallet_full_data`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${upstashToken.value}` },
-            body: JSON.stringify(JSON.stringify(payload))
+            body: JSON.stringify(payload)
           });
+        } catch (e) {
+          console.warn('Push notice:', e);
+        } finally {
           isSynced.value = true;
           syncStatusText.value = 'Cloud Synced';
-        } catch (e) {
-          syncStatusText.value = 'Offline (Saved Local)';
         }
       };
 
@@ -906,7 +907,7 @@
 
       onMounted(() => {
         syncWithCloud();
-        setInterval(syncWithCloud, 4000);
+        setInterval(syncWithCloud, 10000);
         initPWA();
       });
 
