@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>E-Wallet & Cash Tracker PWA</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <!-- OCR Library for Receipt Scanning -->
+  <script src="https://unpkg.com/tesseract.js@5.0.0/dist/tesseract.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #f8fafc; padding-bottom: 95px; -webkit-tap-highlight-color: transparent; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body class="text-slate-800">
+
+<div id="app" class="max-w-md mx-auto min-h-screen bg-slate-50 relative shadow-2xl overflow-hidden">
+
+  <!-- TOP COMPACT HEADER WITH HAMBURGER MENU (☰) & CAPITAL DISPLAY -->
+  <div class="bg-indigo-600 p-3.5 text-white sticky top-0 z-30 shadow-md flex justify-between items-center">
+    <div class="flex items-center gap-3">
+      <!-- ☰ HAMBURGER MENU BUTTON -->
+      <button @click="showDrawer = true" class="p-1.5 rounded-lg bg-indigo-700/80 hover:bg-indigo-700 active:scale-95 transition">
+        <i class="ph ph-list text-xl font-bold"></i>
+      </button>
+
+      <div>
+        <h1 class="text-base font-bold tracking-tight leading-tight">E-Wallet Logbook</h1>
+        <div class="flex items-center gap-1.5 text-[10px] text-indigo-200 mt-0.5">
+          <span :class="['w-2 h-2 rounded-full', isSynced ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400']"></span>
+          <span class="font-semibold">{{ syncStatusText }}</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- TOTAL CAPITAL DISPLAY -->
+    <div class="bg-indigo-700/90 border border-indigo-400/40 px-3 py-1.5 rounded-xl text-right shadow-inner">
+      <p class="text-[9px] font-bold text-indigo-200 uppercase tracking-wider leading-none">Total Capital</p>
+      <p class="text-sm font-extrabold tabular-nums text-white mt-0.5">₱{{ formatMoney(overallCapital) }}</p>
+    </div>
+  </div>
+
+  <!-- SEARCH BAR FOR REPORTS & SUMMARY LOG -->
+  <div v-if="['ALL_LOG', 'CASH IN', 'CASH OUT', 'LOAD', 'PAYMENT'].includes(currentTab)" class="p-3.5 pb-2">
+    <div class="relative">
+      <i class="ph ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+      <input type="text" v-model="searchQuery" placeholder="Search Ref No., Phone, Wallet, o Date..." 
+        class="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm">
+    </div>
+  </div>
+
+  <!-- ==================== SIDE DRAWER / HAMBURGER MENU ==================== -->
+  <div v-if="showDrawer" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex justify-start">
+    <div class="bg-white w-4/5 max-w-xs h-full shadow-2xl p-4 flex flex-col justify-between overflow-y-auto">
+      <div class="space-y-4">
+        <div class="flex justify-between items-center border-b pb-3">
+          <div class="flex items-center gap-2">
+            <i class="ph ph-squares-four text-indigo-600 text-xl font-bold"></i>
+            <h2 class="font-extrabold text-sm text-slate-800">Menu & Reports</h2>
+          </div>
+          <button @click="showDrawer = false" class="text-slate-400 text-xl font-bold p-1">&times;</button>
+        </div>
+
+        <nav class="space-y-1">
+          <button @click="selectDrawerTab('ALL_LOG')" :class="['w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition', currentTab === 'ALL_LOG' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100']">
+            <i class="ph ph-magnifying-glass text-base text-indigo-600"></i>
+            <span>🔍 Summary Log</span>
+          </button>
+
+          <button @click="selectDrawerTab('CASH IN')" :class="['w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition', currentTab === 'CASH IN' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100']">
+            <i class="ph ph-arrow-down-left text-base text-blue-600"></i>
+            <span>🟢 Cash In Report</span>
+          </button>
+
+          <button @click="selectDrawerTab('CASH OUT')" :class="['w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition', currentTab === 'CASH OUT' ? 'bg-rose-50 text-rose-700' : 'text-slate-700 hover:bg-slate-100']">
+            <i class="ph ph-arrow-up-right text-base text-rose-600"></i>
+            <span>🔴 Cash Out Report</span>
+          </button>
+
+          <button @click="selectDrawerTab('LOAD')" :class="['w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition', currentTab === 'LOAD' ? 'bg-amber-50 text-amber-700' : 'text-slate-700 hover:bg-slate-100']">
+            <i class="ph ph-device-mobile text-base text-amber-600"></i>
+            <span>📱 Load Report</span>
+          </button>
+
+          <button @click="selectDrawerTab('PAYMENT')" :class="['w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition', currentTab === 'PAYMENT' ? 'bg-purple-50 text-purple-700' : 'text-slate-700 hover:bg-slate-100']">
+            <i class="ph ph-credit-card text-base text-purple-600"></i>
+            <span>💳 Payment Report</span>
+          </button>
+
+          <button @click="selectDrawerTab('PROFIT')" :class="['w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition', currentTab === 'PROFIT' ? 'bg-teal-50 text-teal-700' : 'text-slate-700 hover:bg-slate-100']">
+            <i class="ph ph-chart-line-up text-base text-teal-600"></i>
+            <span>📈 Total Profit</span>
+          </button>
+
+          <button @click="selectDrawerTab('ADJUST')" :class="['w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 transition', currentTab === 'ADJUST' ? 'bg-slate-100 text-slate-800' : 'text-slate-700 hover:bg-slate-100']">
+            <i class="ph ph-sliders text-base text-slate-600"></i>
+            <span>⚙️ Capital Adjustments</span>
+          </button>
+        </nav>
+      </div>
+
+      <div class="border-t pt-3 text-[10px] text-slate-400 text-center">
+        E-Wallet Logbook PWA v2.0
+      </div>
+    </div>
+    <div @click="showDrawer = false" class="flex-1"></div>
+  </div>
+
+  <!-- ==================== TAB 1: DASHBOARD (E-WALLETS & SUMMARY) ==================== -->
+  <div v-if="currentTab === 'DASHBOARD'" class="p-3.5 space-y-3">
+    
+    <!-- CASH BALANCE & PROFIT CARDS -->
+    <div class="grid grid-cols-2 gap-2">
+      <!-- CASH ON HAND CARD -->
+      <div class="rounded-2xl bg-emerald-50 border border-emerald-200/80 p-3 shadow-sm relative">
+        <div class="flex justify-between items-start">
+          <p class="text-[10px] font-bold text-emerald-700 uppercase tracking-wider mb-0.5">💵 Cash / On-Hand</p>
+          <button @click="openAdjustModal('CASH')" title="Adjust Cash" class="text-emerald-700 hover:text-emerald-900 bg-emerald-200/60 p-1 rounded-md text-xs">
+            <i class="ph ph-pencil-simple"></i>
+          </button>
+        </div>
+        <p class="text-lg font-bold tabular-nums text-emerald-950">₱{{ formatMoney(cashBalance) }}</p>
+        <p class="text-[9px] text-emerald-600 font-medium mt-0.5">*Bukod ang tubo dito</p>
+      </div>
+
+      <!-- TOTAL PROFIT CARD -->
+      <div class="rounded-2xl bg-teal-50 border border-teal-200/80 p-3 shadow-sm">
+        <p class="text-[10px] font-bold text-teal-700 uppercase tracking-wider mb-0.5">📈 Total Profit / Fee</p>
+        <p class="text-lg font-bold tabular-nums text-teal-950">₱{{ formatMoney(totalProfit) }}</p>
+        <p class="text-[9px] text-teal-600 font-medium mt-0.5">*Naka-bukod sa capital</p>
+      </div>
+    </div>
+
+    <!-- INDIVIDUAL E-WALLET CARDS -->
+    <div class="space-y-1.5">
+      <div class="flex justify-between items-center px-0.5">
+        <p class="text-[11px] font-bold text-slate-600 uppercase tracking-wider">📲 E-Wallet & Bank Balances</p>
+        <p class="text-[11px] font-extrabold text-indigo-600">Total: ₱{{ formatMoney(totalEWallet) }}</p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <div v-for="(bal, walletName) in walletBalances" :key="walletName" 
+          class="bg-white border border-slate-200/80 p-2.5 rounded-xl shadow-sm flex flex-col justify-between">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-extrabold text-slate-700">{{ walletName }}</span>
+            <button @click="openAdjustModal(walletName)" title="Adjust Balance" class="text-slate-400 hover:text-indigo-600 p-0.5 rounded">
+              <i class="ph ph-pencil-simple text-xs"></i>
+            </button>
+          </div>
+          <p class="text-sm font-extrabold tabular-nums text-slate-900 mt-1">₱{{ formatMoney(bal) }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SUMMARY LOG WIDGET (PER DAY, WEEK, MONTH) -->
+    <div class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm space-y-2.5">
+      <div class="flex justify-between items-center border-b border-slate-100 pb-2">
+        <div class="flex items-center gap-1.5">
+          <i class="ph ph-chart-bar-horizontal text-indigo-600 text-base"></i>
+          <h2 class="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Transaction Summary Log</h2>
+        </div>
+        <!-- MINI TIME RANGE TOGGLE -->
+        <div class="flex bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold">
+          <button @click="summaryRange = 'DAY'" :class="['px-2 py-0.5 rounded-md transition', summaryRange === 'DAY' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500']">Day</button>
+          <button @click="summaryRange = 'WEEK'" :class="['px-2 py-0.5 rounded-md transition', summaryRange === 'WEEK' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500']">Week</button>
+          <button @click="summaryRange = 'MONTH'" :class="['px-2 py-0.5 rounded-md transition', summaryRange === 'MONTH' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500']">Month</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 text-center">
+        <div class="bg-blue-50/70 border border-blue-100 p-2 rounded-xl">
+          <p class="text-[9px] font-bold text-blue-600 uppercase">Cash In</p>
+          <p class="text-xs font-extrabold text-blue-900 tabular-nums">₱{{ formatMoney(currentSummary.cashIn) }}</p>
+          <p class="text-[8px] text-blue-500">{{ currentSummary.countIn }} txns</p>
+        </div>
+        <div class="bg-rose-50/70 border border-rose-100 p-2 rounded-xl">
+          <p class="text-[9px] font-bold text-rose-600 uppercase">Cash Out</p>
+          <p class="text-xs font-extrabold text-rose-900 tabular-nums">₱{{ formatMoney(currentSummary.cashOut) }}</p>
+          <p class="text-[8px] text-rose-500">{{ currentSummary.countOut }} txns</p>
+        </div>
+        <div class="bg-teal-50/70 border border-teal-100 p-2 rounded-xl">
+          <p class="text-[9px] font-bold text-teal-600 uppercase">Profit / Fee</p>
+          <p class="text-xs font-extrabold text-teal-900 tabular-nums">₱{{ formatMoney(currentSummary.profit) }}</p>
+          <p class="text-[8px] text-teal-500">Tubo</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ==================== MAIN CONTENT AREA FOR OTHER VIEWS ==================== -->
+  <div v-else class="p-3.5 pt-1">
+
+    <!-- 1. ALL TRANSACTIONS LOG TAB (MAGKAKASAMA LAHAT PER DAY) -->
+    <div v-if="currentTab === 'ALL_LOG'" class="space-y-3 mb-4">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h2 class="text-xs font-extrabold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+          <i class="ph ph-list-bullets text-indigo-600 text-base"></i>
+          Complete Transaction Log (Per Day)
+        </h2>
+        <span class="text-[10px] font-bold text-slate-500 bg-slate-200/60 px-2 py-0.5 rounded-md">{{ filteredList.length }} entries</span>
+      </div>
+
+      <div v-if="groupedByDay.length === 0" class="text-center py-10 text-slate-400">
+        <i class="ph ph-receipt-x text-3xl mb-1"></i>
+        <p class="text-xs font-medium">Walang nahanap na transaction record.</p>
+      </div>
+
+      <!-- DAILY GROUPED CONTAINER -->
+      <div v-for="group in groupedByDay" :key="group.dateLabel" class="space-y-2">
+        <div class="bg-slate-200/80 border border-slate-300/70 px-3 py-1.5 rounded-xl flex justify-between items-center text-xs font-bold text-slate-700 shadow-2xs">
+          <span class="flex items-center gap-1"><i class="ph ph-calendar-blank text-indigo-600"></i> {{ group.dateLabel }}</span>
+          <span class="text-[10px] font-extrabold text-indigo-700 bg-white px-2 py-0.5 rounded-lg shadow-2xs">₱{{ formatMoney(group.dayTotal) }} Volume</span>
+        </div>
+
+        <!-- TRANSACTIONS UNDER THIS DAY -->
+        <div v-for="tx in group.items" :key="tx.id" @click="openTxDetail(tx)" class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm space-y-2 cursor-pointer hover:border-indigo-300 transition">
+          <div class="flex justify-between items-start gap-2">
+            <div class="flex items-start gap-2.5">
+              <div v-if="tx.receipt" @click.stop="viewReceipt(tx.receipt)" class="relative cursor-pointer shrink-0">
+                <img :src="tx.receipt" class="w-11 h-11 object-cover rounded-xl border border-slate-200 shadow-sm">
+                <span class="absolute -bottom-1 -right-1 bg-indigo-600 text-white p-0.5 rounded-full text-[8px]"><i class="ph ph-magnifying-glass-plus"></i></span>
+              </div>
+              
+              <div>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span :class="['px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wide', getBadgeStyle(tx.type)]">
+                    {{ tx.type }}
+                  </span>
+                  <span v-if="tx.type === 'CASH OUT'" :class="['px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase flex items-center gap-0.5', tx.status === 'CLAIMED' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800 animate-pulse']">
+                    <i :class="['ph', tx.status === 'CLAIMED' ? 'ph-check-circle' : 'ph-clock']"></i>
+                    {{ tx.status || 'UNCLAIMED' }}
+                  </span>
+                </div>
+
+                <p class="text-[11px] text-slate-500 mt-1">{{ tx.date }} • <span class="font-bold text-slate-700">{{ tx.wallet }}</span></p>
+                <p v-if="tx.refNumber" class="text-xs font-mono font-bold text-slate-800 mt-0.5">Ref: {{ tx.refNumber }}</p>
+              </div>
+            </div>
+
+            <div class="text-right">
+              <p class="text-base font-extrabold tabular-nums text-slate-900">₱{{ formatMoney(tx.amount) }}</p>
+              <p v-if="tx.fee > 0" class="text-[11px] font-bold text-teal-600">+₱{{ formatMoney(tx.fee) }} Fee</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. INDIVIDUAL TRANSACTION REPORTS (IN, OUT, PAY, LOAD) -->
+    <div v-if="['CASH IN', 'CASH OUT', 'PAYMENT', 'LOAD'].includes(currentTab)" class="space-y-3 mb-4">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h2 class="text-xs font-extrabold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+          <span :class="['w-2 h-2 rounded-full', getBadgeStyle(currentTab)]"></span>
+          {{ currentTab }} Records
+        </h2>
+        <span class="text-[10px] font-bold text-slate-500 bg-slate-200/60 px-2 py-0.5 rounded-md">{{ filteredList.length }} entries</span>
+      </div>
+
+      <div v-if="filteredList.length === 0" class="text-center py-10 text-slate-400">
+        <i class="ph ph-receipt-x text-3xl mb-1"></i>
+        <p class="text-xs font-medium">Walang {{ currentTab }} transaction record.</p>
+      </div>
+
+      <div v-for="tx in filteredList" :key="tx.id" @click="openTxDetail(tx)" class="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm space-y-2 cursor-pointer hover:border-indigo-300 transition">
+        <div class="flex justify-between items-start gap-2">
+          <div class="flex items-start gap-2.5">
+            <div v-if="tx.receipt" @click.stop="viewReceipt(tx.receipt)" class="relative cursor-pointer shrink-0">
+              <img :src="tx.receipt" class="w-11 h-11 object-cover rounded-xl border border-slate-200 shadow-sm">
+              <span class="absolute -bottom-1 -right-1 bg-indigo-600 text-white p-0.5 rounded-full text-[8px]"><i class="ph ph-magnifying-glass-plus"></i></span>
+            </div>
+            
+            <div>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span :class="['px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wide', getBadgeStyle(tx.type)]">
+                  {{ tx.type }}
+                </span>
+                <span v-if="tx.type === 'CASH OUT'" :class="['px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase flex items-center gap-0.5', tx.status === 'CLAIMED' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800 animate-pulse']">
+                  <i :class="['ph', tx.status === 'CLAIMED' ? 'ph-check-circle' : 'ph-clock']"></i>
+                  {{ tx.status || 'UNCLAIMED' }}
+                </span>
+              </div>
+
+              <p class="text-[11px] text-slate-500 mt-1">{{ tx.date }} • <span class="font-bold text-slate-700">{{ tx.wallet }}</span></p>
+              <p v-if="tx.refNumber" class="text-xs font-mono font-bold text-slate-800 mt-0.5">Ref: {{ tx.refNumber }}</p>
+            </div>
+          </div>
+
+          <div class="text-right">
+            <p class="text-base font-extrabold tabular-nums text-slate-900">₱{{ formatMoney(tx.amount) }}</p>
+            <p v-if="tx.fee > 0" class="text-[11px] font-bold text-teal-600">+₱{{ formatMoney(tx.fee) }} Fee</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. NOTES & REMINDERS TAB -->
+    <div v-if="currentTab === 'NOTES'" class="space-y-3 mb-4">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h2 class="text-xs font-extrabold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+          <i class="ph ph-note-pencil text-indigo-600 text-base"></i>
+          Store Reminders & Notes
+        </h2>
+        <button @click="openNoteModal()" class="bg-indigo-600 text-white px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm active:scale-95 transition">
+          <i class="ph ph-plus"></i> Add Note
+        </button>
+      </div>
+
+      <div v-if="notes.length === 0" class="text-center py-10 text-slate-400">
+        <i class="ph ph-notepad text-3xl mb-1"></i>
+        <p class="text-xs font-medium">Walang nakagawang note o reminder.</p>
+      </div>
+
+      <div v-for="note in notes" :key="note.id" class="bg-amber-50/60 border border-amber-200/80 rounded-2xl p-3.5 shadow-sm space-y-2 relative">
+        <div class="flex justify-between items-start">
+          <div>
+            <h3 class="text-sm font-bold text-slate-800">{{ note.title }}</h3>
+            <p class="text-[10px] font-medium text-slate-400 mt-0.5">{{ note.date }}</p>
+          </div>
+          <div class="flex gap-1">
+            <button @click="editNote(note)" class="p-1 text-amber-700 hover:bg-amber-200/60 rounded-lg text-xs"><i class="ph ph-pencil-simple"></i></button>
+            <button @click="deleteNote(note.id)" class="p-1 text-rose-600 hover:bg-rose-100 rounded-lg text-xs"><i class="ph ph-trash"></i></button>
+          </div>
+        </div>
+        <p class="text-xs text-slate-700 whitespace-pre-line leading-relaxed font-normal bg-white/70 p-2.5 rounded-xl border border-amber-100">{{ note.content }}</p>
+      </div>
+    </div>
+
+    <!-- 4. ADJUSTMENTS REPORT TAB -->
+    <div v-if="currentTab === 'ADJUST'" class="space-y-3 mb-4">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h2 class="text-xs font-extrabold text-slate-800 uppercase tracking-wide">📋 Capital Adjustments</h2>
+        <button @click="openAdjustModal('CASH')" class="bg-indigo-50 text-indigo-600 border border-indigo-200 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
+          <i class="ph ph-plus"></i> New Adjustment
+        </button>
+      </div>
+
+      <div v-if="adjustmentList.length === 0" class="text-center py-8 text-slate-400">
+        <i class="ph ph-sliders text-3xl mb-1"></i>
+        <p class="text-xs">Walang naisagawang balance adjustment.</p>
+      </div>
+
+      <div v-for="adj in adjustmentList" :key="adj.id" class="bg-white border border-slate-200 p-3 rounded-2xl shadow-sm space-y-2">
+        <div class="flex justify-between items-start">
+          <div>
+            <span class="px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase bg-indigo-100 text-indigo-700">
+              ADJUSTMENT
+            </span>
+            <p class="text-xs font-bold text-slate-800 mt-1">Target: <span class="text-indigo-600">{{ adj.wallet }}</span></p>
+            <p class="text-[10px] text-slate-400">{{ adj.date }}</p>
+          </div>
+          <p :class="['text-sm font-extrabold tabular-nums', adj.amount >= 0 ? 'text-emerald-600' : 'text-rose-600']">
+            {{ adj.amount >= 0 ? '+' : '' }}₱{{ formatMoney(adj.amount) }}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. PROFIT REPORT TAB -->
+    <div v-if="currentTab === 'PROFIT'" class="space-y-3 mb-4">
+      <h2 class="text-xs font-extrabold text-slate-800 border-b pb-2 uppercase tracking-wide">Detailed Profit Breakdown</h2>
+      <div class="grid grid-cols-2 gap-2.5">
+        <div class="bg-blue-50 border border-blue-100 p-3 rounded-xl">
+          <p class="text-[10px] font-bold text-blue-600 uppercase">Cash In Fees</p>
+          <p class="text-base font-bold text-blue-900">₱{{ formatMoney(profitBreakdown.cashIn) }}</p>
+        </div>
+        <div class="bg-rose-50 border border-rose-100 p-3 rounded-xl">
+          <p class="text-[10px] font-bold text-rose-600 uppercase">Cash Out Fees</p>
+          <p class="text-base font-bold text-rose-900">₱{{ formatMoney(profitBreakdown.cashOut) }}</p>
+        </div>
+        <div class="bg-amber-50 border border-amber-100 p-3 rounded-xl">
+          <p class="text-[10px] font-bold text-amber-600 uppercase">Load Fees</p>
+          <p class="text-base font-bold text-amber-900">₱{{ formatMoney(profitBreakdown.load) }}</p>
+        </div>
+        <div class="bg-purple-50 border border-purple-100 p-3 rounded-xl">
+          <p class="text-[10px] font-bold text-purple-600 uppercase">Payment Fees</p>
+          <p class="text-base font-bold text-purple-900">₱{{ formatMoney(profitBreakdown.payment) }}</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- CLEAN 5-BUTTON BOTTOM NAVIGATION BAR -->
+  <div class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-slate-200 grid grid-cols-5 z-40 text-[9px] font-extrabold text-slate-500 shadow-lg items-center py-1.5">
+    
+    <button @click="currentTab = 'DASHBOARD'" :class="['py-1 flex flex-col items-center justify-center transition-colors', currentTab === 'DASHBOARD' ? 'text-indigo-600 font-black' : '']">
+      <i class="ph ph-squares-four text-lg"></i>
+      <span>DASH</span>
+    </button>
+
+    <button @click="currentTab = 'CASH IN'" :class="['py-1 flex flex-col items-center justify-center transition-colors', currentTab === 'CASH IN' ? 'text-blue-600 font-black' : '']">
+      <i class="ph ph-arrow-down-left text-lg"></i>
+      <span>IN</span>
+    </button>
+
+    <!-- CENTER FLOATING [+] TRANSACTION BUTTON -->
+    <div class="flex justify-center items-center">
+      <button @click="openFullScreenForm()" class="bg-indigo-600 hover:bg-indigo-700 text-white w-11 h-11 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition -mt-5 border-2 border-white">
+        <i class="ph ph-plus text-xl font-bold"></i>
+      </button>
+    </div>
+
+    <button @click="currentTab = 'CASH OUT'" :class="['py-1 flex flex-col items-center justify-center transition-colors', currentTab === 'CASH OUT' ? 'text-rose-600 font-black' : '']">
+      <i class="ph ph-arrow-up-right text-lg"></i>
+      <span>OUT</span>
+    </button>
+
+    <button @click="currentTab = 'NOTES'" :class="['py-1 flex flex-col items-center justify-center transition-colors', currentTab === 'NOTES' ? 'text-amber-600 font-black' : '']">
+      <i class="ph ph-note-pencil text-lg"></i>
+      <span>NOTES</span>
+    </button>
+
+  </div>
+
+  <!-- ==================== FULL SCREEN TRANSACTION FORM PAGE ==================== -->
+  <div v-if="showForm" class="fixed inset-0 bg-white z-50 flex flex-col h-full overflow-y-auto">
+    <!-- FULLSCREEN HEADER -->
+    <div class="bg-indigo-600 text-white p-4 sticky top-0 z-10 flex justify-between items-center shadow">
+      <div class="flex items-center gap-2">
+        <button @click="showForm = false" class="p-1 rounded-lg hover:bg-indigo-700 active:scale-95 text-lg font-bold">
+          <i class="ph ph-arrow-left"></i>
+        </button>
+        <h2 class="font-bold text-base">{{ isEditing ? 'Edit Transaction' : 'New Transaction' }}</h2>
+      </div>
+      <button @click="showForm = false" class="text-xs bg-indigo-700 px-2.5 py-1 rounded-lg font-semibold">Cancel</button>
+    </div>
+
+    <div class="p-4 space-y-4 max-w-md mx-auto w-full flex-1 pb-10">
+
+      <!-- OCR SCANNER STATUS ALERT -->
+      <div v-if="isScanningReceipt" class="bg-indigo-50 border border-indigo-200 p-3 rounded-2xl flex items-center gap-2.5 text-indigo-800 text-xs font-bold animate-pulse">
+        <i class="ph ph-spinner text-lg animate-spin text-indigo-600"></i>
+        <span>Binabasa ang resibo gamit ang OCR Scanner...</span>
+      </div>
+
+      <div v-if="scanSuccessMessage" class="bg-emerald-50 border border-emerald-200 p-3 rounded-2xl flex items-center gap-2 text-emerald-800 text-xs font-bold">
+        <i class="ph ph-check-circle text-lg text-emerald-600"></i>
+        <span>{{ scanSuccessMessage }}</span>
+      </div>
+
+      <!-- INSUFFICIENT FUNDS ERROR -->
+      <div v-if="validationError" class="bg-rose-50 border border-rose-200 p-3 rounded-2xl flex items-start gap-2 text-rose-800 text-xs font-semibold animate-bounce">
+        <i class="ph ph-warning-circle text-lg text-rose-600 shrink-0 mt-0.5"></i>
+        <span>{{ validationError }}</span>
+      </div>
+
+      <form @submit.prevent="validateAndSaveTx" class="space-y-3.5">
+        
+        <!-- CAMERA / GALLERY ATTACH RECEIPT WITH OCR SCANNER -->
+        <div class="bg-slate-50 border-2 border-dashed border-slate-300 p-3.5 rounded-2xl text-center space-y-2">
+          <label class="block text-xs font-extrabold text-slate-700">📸 OCR Receipt Scanner (Auto Fill-Out)</label>
+          <p class="text-[10px] text-slate-500">Pumili ng resibo mula sa camera o gallery para awtomatikong mag-fill out ang Ref No. at Amount.</p>
+          
+          <div class="flex items-center justify-center gap-3 pt-1">
+            <label class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow active:scale-95 transition">
+              <i class="ph ph-camera text-base"></i>
+              <span>{{ form.receipt ? 'Palitan ang Resibo' : 'Kumuha / Pumili ng Resibo' }}</span>
+              <input type="file" accept="image/*" @change="handleImageUploadWithOCR" class="hidden">
+            </label>
+            
+            <div v-if="form.receipt" class="relative">
+              <img :src="form.receipt" class="w-12 h-12 object-cover rounded-xl border border-slate-300 shadow">
+              <button @click="form.receipt = null" type="button" class="absolute -top-1.5 -right-1.5 bg-rose-600 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center font-bold shadow">&times;</button>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Transaction Type</label>
+          <select v-model="form.type" @change="onTypeOrWalletChange" class="w-full p-3 bg-slate-50 border rounded-xl text-sm font-bold">
+            <option value="CASH IN">CASH IN</option>
+            <option value="CASH OUT">CASH OUT</option>
+            <option value="PAYMENT">PAYMENT</option>
+            <option value="LOAD">LOAD</option>
+            <option value="ADD CAPITAL">ADD CAPITAL / ADJUSTMENT</option>
+          </select>
+        </div>
+
+        <!-- WALLET SOURCE WITH EMBEDDED BALANCES -->
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Wallet Source / Destination</label>
+          <select v-model="form.wallet" @change="onTypeOrWalletChange" class="w-full p-3 bg-slate-50 border rounded-xl text-sm font-semibold">
+            <option value="GCash #1">GCash #1 (₱{{ formatMoney(walletBalances['GCash #1']) }})</option>
+            <option value="GCash #2">GCash #2 (₱{{ formatMoney(walletBalances['GCash #2']) }})</option>
+            <option value="Maya">Maya (₱{{ formatMoney(walletBalances['Maya']) }})</option>
+            <option value="PEDDLR LOAD">PEDDLR LOAD (₱{{ formatMoney(walletBalances['PEDDLR LOAD']) }})</option>
+            <option value="METROBANK">METROBANK (₱{{ formatMoney(walletBalances['METROBANK']) }})</option>
+            <option value="CASH">CASH (Physical Hand) (₱{{ formatMoney(cashBalance) }})</option>
+          </select>
+        </div>
+
+        <!-- CASH OUT STATUS DROPDOWN -->
+        <div v-if="form.type === 'CASH OUT'">
+          <label class="block text-xs font-bold text-rose-700 mb-1">Claim Status</label>
+          <select v-model="form.status" class="w-full p-3 bg-rose-50 border border-rose-200 rounded-xl text-sm font-bold text-rose-900">
+            <option value="UNCLAIMED">UNCLAIMED (Hindi pa nakuha ang cash)</option>
+            <option value="CLAIMED">CLAIMED (Nakuha na ang cash)</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2.5">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Amount (₱)</label>
+            <input type="number" v-model.number="form.amount" @input="onAmountInput" required min="0.01" step="any" placeholder="0.00" class="w-full p-3 bg-slate-50 border rounded-xl text-sm font-bold tabular-nums">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-teal-700 mb-1">Service Fee / Tubo (₱)</label>
+            <input type="number" v-model.number="form.fee" min="0" step="any" placeholder="0.00" class="w-full p-3 bg-teal-50 border border-teal-200 rounded-xl text-sm font-bold text-teal-900 tabular-nums">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Reference Number</label>
+          <input type="text" v-model="form.refNumber" placeholder="e.g. 100293848" class="w-full p-3 bg-slate-50 border rounded-xl text-sm font-mono">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Phone Number (Optional)</label>
+          <input type="text" v-model="form.phone" placeholder="0917XXXXXXX" class="w-full p-3 bg-slate-50 border rounded-xl text-sm tabular-nums">
+        </div>
+
+        <button type="submit" :disabled="!!validationError" :class="['w-full py-3.5 font-extrabold rounded-xl shadow-lg text-sm transition active:scale-95 mt-4', validationError ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700']">
+          {{ isEditing ? 'Update Transaction' : 'Save Transaction' }}
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- TRANSACTION DETAILS VIEW & BACKTRACK MODAL -->
+  <div v-if="showDetailModal && selectedTx" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-3">
+    <div class="bg-white w-full max-w-md rounded-3xl p-5 space-y-3.5 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h3 class="font-bold text-sm text-slate-800">Transaction Details</h3>
+        <button @click="showDetailModal = false" class="text-slate-400 text-2xl font-bold">&times;</button>
+      </div>
+
+      <div class="space-y-2 text-xs">
+        <div class="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl">
+          <span class="text-slate-500 font-semibold">Type:</span>
+          <span :class="['px-2 py-0.5 rounded-md font-extrabold uppercase', getBadgeStyle(selectedTx.type)]">{{ selectedTx.type }}</span>
+        </div>
+
+        <div class="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl">
+          <span class="text-slate-500 font-semibold">Wallet / Fund:</span>
+          <span class="font-extrabold text-slate-800">{{ selectedTx.wallet }}</span>
+        </div>
+
+        <div class="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl">
+          <span class="text-slate-500 font-semibold">Amount:</span>
+          <span class="font-extrabold text-base tabular-nums text-slate-900">₱{{ formatMoney(selectedTx.amount) }}</span>
+        </div>
+
+        <div class="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl">
+          <span class="text-slate-500 font-semibold">Service Fee / Tubo:</span>
+          <span class="font-extrabold text-teal-700">₱{{ formatMoney(selectedTx.fee) }}</span>
+        </div>
+
+        <div v-if="selectedTx.refNumber" class="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl">
+          <span class="text-slate-500 font-semibold">Ref Number:</span>
+          <span class="font-mono font-bold text-indigo-700">{{ selectedTx.refNumber }}</span>
+        </div>
+
+        <div v-if="selectedTx.phone" class="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl">
+          <span class="text-slate-500 font-semibold">Mobile Phone:</span>
+          <span class="font-semibold text-slate-800">{{ selectedTx.phone }}</span>
+        </div>
+
+        <div class="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl">
+          <span class="text-slate-500 font-semibold">Date & Time:</span>
+          <span class="font-medium text-slate-700">{{ selectedTx.date }}</span>
+        </div>
+      </div>
+
+      <!-- RECEIPT BACKTRACK PREVIEW -->
+      <div v-if="selectedTx.receipt" class="space-y-1.5 pt-1">
+        <p class="text-[11px] font-bold text-slate-600">📸 Resibo (Click para i-zoom):</p>
+        <div @click="viewReceipt(selectedTx.receipt)" class="cursor-pointer border border-slate-200 rounded-xl overflow-hidden bg-slate-100 flex justify-center p-2">
+          <img :src="selectedTx.receipt" class="max-h-48 object-contain rounded-lg">
+        </div>
+      </div>
+      <div v-else class="text-center py-2 text-slate-400 text-xs italic">Walang resibo na naka-attach.</div>
+
+      <!-- ACTION BUTTONS IN DETAIL VIEW -->
+      <div class="flex justify-between items-center border-t pt-3 gap-2">
+        <button @click="deleteTxFromDetail(selectedTx.id)" class="px-3 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95 transition">
+          <i class="ph ph-trash"></i> Delete
+        </button>
+
+        <div class="flex gap-2">
+          <button @click="editTxFromDetail(selectedTx)" class="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95 transition">
+            <i class="ph ph-pencil-simple"></i> Edit
+          </button>
+          <button @click="showDetailModal = false" class="px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold active:scale-95 transition">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ADD / EDIT NOTE -->
+  <div v-if="showNoteModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-sm rounded-3xl p-5 space-y-3.5">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h3 class="font-bold text-base text-slate-800">{{ isEditingNote ? 'Edit Reminder Note' : 'New Reminder Note' }}</h3>
+        <button @click="showNoteModal = false" class="text-slate-400 text-2xl font-bold">&times;</button>
+      </div>
+
+      <form @submit.prevent="saveNote" class="space-y-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">Pamagat / Title</label>
+          <input type="text" v-model="noteForm.title" required placeholder="e.g. GCash Cashout ni Aling Nena" class="w-full p-2.5 bg-slate-50 border rounded-xl text-sm font-bold">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">Detalye / Content</label>
+          <textarea v-model="noteForm.content" required rows="4" placeholder="Isulat dito ang Paalala, Utang, o Re-order balance..." class="w-full p-2.5 bg-slate-50 border rounded-xl text-xs leading-relaxed"></textarea>
+        </div>
+
+        <button type="submit" class="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white font-extrabold rounded-xl shadow active:scale-95 transition">
+          {{ isEditingNote ? 'Update Note' : 'Save Note' }}
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: QUICK ADJUST CASH / WALLET BALANCE -->
+  <div v-if="showAdjustModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-sm rounded-3xl p-5 space-y-4">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h3 class="font-bold text-base text-slate-800">Adjust Balance: {{ adjustWalletTarget }}</h3>
+        <button @click="showAdjustModal = false" class="text-slate-400 text-2xl font-bold">&times;</button>
+      </div>
+
+      <div class="space-y-3">
+        <p class="text-xs text-slate-500">Mag-add o mag-bawas ng puhunan/balance sa account na ito (Gagawa ito ng Adjustment entry sa Logbook).</p>
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">Dagdag/Bawas na Halaga (₱)</label>
+          <input type="number" v-model.number="adjustAmount" placeholder="e.g. 500 o -500" class="w-full p-2.5 bg-slate-50 border rounded-xl text-sm font-bold tabular-nums">
+        </div>
+      </div>
+
+      <button @click="saveAdjustment" class="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow active:scale-95 transition">
+        Save Adjustment
+      </button>
+    </div>
+  </div>
+
+  <!-- FULL RECEIPT PREVIEW ZOOM MODAL -->
+  <div v-if="activeReceipt" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-xs" @click.self="activeReceipt = null">
+    <div class="relative max-w-sm w-full bg-white rounded-2xl overflow-hidden shadow-2xl">
+      <button @click="activeReceipt = null" class="absolute top-3 right-3 bg-slate-900/70 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold text-lg">&times;</button>
+      <img :src="activeReceipt" class="w-full h-auto max-h-[80vh] object-contain bg-black">
+      <div class="p-3 text-center bg-slate-100 border-t">
+        <p class="text-xs font-bold text-slate-600">Resibo Zoom Preview</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const { createApp, ref, computed, watch, onMounted } = Vue;
+
+  createApp({
+    setup() {
+      const currentTab = ref('DASHBOARD');
+      const searchQuery = ref('');
+      const showDrawer = ref(false);
+      const showForm = ref(false);
+      const showAdjustModal = ref(false);
+      const showNoteModal = ref(false);
+      const showDetailModal = ref(false);
+      const selectedTx = ref(null);
+
+      const isEditing = ref(false);
+      const isEditingNote = ref(false);
+      const activeReceipt = ref(null);
+      const validationError = ref('');
+      const summaryRange = ref('DAY');
+
+      const isScanningReceipt = ref(false);
+      const scanSuccessMessage = ref('');
+
+      const adjustWalletTarget = ref('CASH');
+      const adjustAmount = ref('');
+
+      // HARDCODED UPSTASH CLOUD SYNC CREDENTIALS
+      const upstashUrl = ref('https://grand-pika-28491.upstash.io');
+      const upstashToken = ref('A287ACQgT0RkMTRiOGItOTc0Mi00ZjdlLTk5NWItM2IzZGIwYjkyZGNkOHkyOThjMzg0YWExNDVkNzg4ZTlhZGUyNTY5NTA5MmI=');
+      const isSynced = ref(true);
+      const syncStatusText = ref('Cloud Synced');
+
+      // Transactions & Notes Local Storage
+      const transactions = ref(JSON.parse(localStorage.getItem('ewallet_logs') || '[]'));
+      const notes = ref(JSON.parse(localStorage.getItem('ewallet_notes') || '[]'));
+
+      watch(transactions, (newVal) => { localStorage.setItem('ewallet_logs', JSON.stringify(newVal)); }, { deep: true });
+      watch(notes, (newVal) => { localStorage.setItem('ewallet_notes', JSON.stringify(newVal)); }, { deep: true });
+
+      const form = ref({
+        id: null, type: 'CASH IN', wallet: 'GCash #1', amount: '', fee: 0, refNumber: '', phone: '', receipt: null, status: 'UNCLAIMED'
+      });
+
+      const noteForm = ref({ id: null, title: '', content: '' });
+
+      // AUTOMATIC FEE COMPUTATION BASED ON BRACKETS
+      const autoCalculateFee = () => {
+        const amt = Number(form.value.amount) || 0;
+        if (amt <= 0) return;
+
+        const wallet = form.value.wallet.toUpperCase();
+
+        if (wallet.includes('GCASH')) {
+          if (amt <= 100) form.value.fee = 5;
+          else if (amt <= 500) form.value.fee = 10;
+          else if (amt <= 1000) form.value.fee = 15;
+          else if (amt <= 1500) form.value.fee = 25;
+          else if (amt <= 2000) form.value.fee = 30;
+          else form.value.fee = Math.ceil(amt / 1000) * 15; // default fallback above 2000
+        } else if (wallet.includes('MAYA')) {
+          if (amt <= 500) form.value.fee = 10;
+          else if (amt <= 1000) form.value.fee = 20;
+          else form.value.fee = Math.ceil(amt / 500) * 10; // default fallback above 1000
+        }
+      };
+
+      const onAmountInput = () => {
+        autoCalculateFee();
+        checkValidation();
+      };
+
+      const onTypeOrWalletChange = () => {
+        autoCalculateFee();
+        checkValidation();
+      };
+
+      // OCR RECEIPT SCANNING ENGINE
+      const handleImageUploadWithOCR = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        scanSuccessMessage.value = '';
+        isScanningReceipt.value = true;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 500; 
+            let width = img.width;
+            let height = img.height;
+
+            if (width > MAX_WIDTH) {
+              height = Math.round((height * MAX_WIDTH) / width);
+              width = MAX_WIDTH;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+            form.value.receipt = compressedDataUrl;
+
+            // Run Tesseract OCR Text Extraction
+            if (window.Tesseract) {
+              Tesseract.recognize(compressedDataUrl, 'eng')
+                .then(({ data: { text } }) => {
+                  console.log('OCR Output:', text);
+                  let foundRef = false;
+                  let foundAmt = false;
+
+                  // Parse Ref Number (9-13 consecutive numbers)
+                  const refMatch = text.match(/(?:Ref|Reference|Txn|ID)?[\s:#]*([0-9]{9,13})/i) || text.match(/\b[0-9]{10,13}\b/);
+                  if (refMatch && refMatch[1]) {
+                    form.value.refNumber = refMatch[1];
+                    foundRef = true;
+                  } else if (refMatch && refMatch[0]) {
+                    form.value.refNumber = refMatch[0];
+                    foundRef = true;
+                  }
+
+                  // Parse Amount (numbers with ₱, PHP, Amount or decimals)
+                  const amtMatch = text.match(/(?:₱|PHP|Amount|Total|Amt)[\s:]*([0-9,]+(?:\.[0-9]{2})?)/i) || text.match(/\b([0-9]{2,5}\.[0-9]{2})\b/);
+                  if (amtMatch && amtMatch[1]) {
+                    const cleanAmt = amtMatch[1].replace(/,/g, '');
+                    if (!isNaN(cleanAmt) && Number(cleanAmt) > 0) {
+                      form.value.amount = Number(cleanAmt);
+                      autoCalculateFee();
+                      foundAmt = true;
+                    }
+                  }
+
+                  if (foundRef || foundAmt) {
+                    scanSuccessMessage.value = 'Nakuha nang maayos ang impormasyon sa resibo!';
+                  } else {
+                    scanSuccessMessage.value = 'Nakuha ang larawan ng resibo.';
+                  }
+                })
+                .catch(err => {
+                  console.error('OCR Error:', err);
+                })
+                .finally(() => {
+                  isScanningReceipt.value = false;
+                });
+            } else {
+              isScanningReceipt.value = false;
+            }
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      };
+
+      // AUTOMATIC CLOUD SYNC ENGINE
+      const syncWithCloud = async () => {
+        try {
+          const res = await fetch(`${upstashUrl.value}/get/wallet_full_data`, {
+            headers: { Authorization: `Bearer ${upstashToken.value}` }
+          });
+          const data = await res.json();
+          if (data && data.result) {
+            const parsed = JSON.parse(data.result);
+            if (parsed) {
+              if (Array.isArray(parsed.transactions)) {
+                transactions.value = parsed.transactions;
+                localStorage.setItem('ewallet_logs', JSON.stringify(parsed.transactions));
+              }
+              if (Array.isArray(parsed.notes)) {
+                notes.value = parsed.notes;
+                localStorage.setItem('ewallet_notes', JSON.stringify(parsed.notes));
+              }
+            }
+          }
+          isSynced.value = true;
+          syncStatusText.value = 'Cloud Synced';
+        } catch (e) {
+          isSynced.value = false;
+          syncStatusText.value = 'Offline (Local)';
+        }
+      };
+
+      const pushToCloud = async () => {
+        try {
+          syncStatusText.value = 'Syncing...';
+          const payload = { transactions: transactions.value, notes: notes.value };
+          await fetch(`${upstashUrl.value}/set/wallet_full_data`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${upstashToken.value}` },
+            body: JSON.stringify(JSON.stringify(payload))
+          });
+          isSynced.value = true;
+          syncStatusText.value = 'Cloud Synced';
+        } catch (e) {
+          syncStatusText.value = 'Offline (Saved Local)';
+        }
+      };
+
+      // PWA MANIFEST & SERVICE WORKER SETUP
+      const initPWA = () => {
+        const manifest = {
+          name: "E-Wallet & Cash Logbook",
+          short_name: "E-Wallet",
+          start_url: ".",
+          display: "standalone",
+          background_color: "#f8fafc",
+          theme_color: "#4f46e5",
+          icons: [
+            {
+              src: "https://cdn-icons-png.flaticon.com/512/10149/10149458.png",
+              sizes: "512x512",
+              type: "image/png"
+            }
+          ]
+        };
+        const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+        const link = document.createElement('link');
+        link.rel = 'manifest';
+        link.href = URL.createObjectURL(manifestBlob);
+        document.head.appendChild(link);
+
+        if ('serviceWorker' in navigator) {
+          const swCode = `
+            self.addEventListener('install', (e) => self.skipWaiting());
+            self.addEventListener('activate', (e) => self.clients.claim());
+            self.addEventListener('fetch', (e) => e.respondWith(fetch(e.request).catch(() => new Response('Offline'))));
+          `;
+          const swBlob = new Blob([swCode], { type: 'text/javascript' });
+          navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(() => {});
+        }
+      };
+
+      onMounted(() => {
+        syncWithCloud();
+        setInterval(syncWithCloud, 4000);
+        initPWA();
+      });
+
+      // LEDGER COMPUTATION
+      const computeLedger = (txList) => {
+        let cash = 0, profit = 0;
+        let wBalances = { 
+          'GCash #1': 0, 'GCash #2': 0, 'Maya': 0, 'PEDDLR LOAD': 0, 'METROBANK': 0 
+        };
+
+        const sorted = [...txList].sort((a, b) => a.id - b.id);
+
+        sorted.forEach(tx => {
+          const amt = Number(tx.amount) || 0;
+          const fee = Number(tx.fee) || 0;
+
+          if (tx.type === 'CASH IN') {
+            if (wBalances[tx.wallet] !== undefined) wBalances[tx.wallet] -= amt;
+            cash += amt;
+            profit += fee;
+          } else if (tx.type === 'CASH OUT') {
+            if (wBalances[tx.wallet] !== undefined) wBalances[tx.wallet] += amt;
+            cash -= amt;
+            profit += fee;
+          } else if (tx.type === 'LOAD' || tx.type === 'PAYMENT') {
+            if (wBalances[tx.wallet] !== undefined) wBalances[tx.wallet] -= amt;
+            cash += amt;
+            profit += fee;
+          } else if (tx.type === 'ADD CAPITAL') {
+            if (tx.wallet === 'CASH') cash += amt;
+            else if (wBalances[tx.wallet] !== undefined) wBalances[tx.wallet] += amt;
+          }
+        });
+
+        return { cash, profit, wBalances };
+      };
+
+      const ledger = computed(() => computeLedger(transactions.value));
+
+      const cashBalance = computed(() => ledger.value.cash);
+      const totalProfit = computed(() => ledger.value.profit);
+      const walletBalances = computed(() => ledger.value.wBalances);
+      const totalEWallet = computed(() => Object.values(walletBalances.value).reduce((s, v) => s + v, 0));
+      const overallCapital = computed(() => totalEWallet.value + cashBalance.value);
+
+      // INSUFFICIENT BALANCE VALIDATION
+      const checkValidation = () => {
+        validationError.value = '';
+        const amt = Number(form.value.amount) || 0;
+        if (amt <= 0) return;
+
+        const otherTxs = isEditing.value 
+          ? transactions.value.filter(t => t.id !== form.value.id) 
+          : transactions.value;
+        const tempLedger = computeLedger(otherTxs);
+
+        const type = form.value.type;
+        const wallet = form.value.wallet;
+
+        if (['CASH IN', 'LOAD', 'PAYMENT'].includes(type) && wallet !== 'CASH') {
+          const currentBal = tempLedger.wBalances[wallet] || 0;
+          if (amt > currentBal) {
+            validationError.value = `Kulang ang balance ng ${wallet}! Mayroon ka lamang ₱${formatMoney(currentBal)}.`;
+          }
+        }
+
+        if (type === 'CASH OUT') {
+          const currentCash = tempLedger.cash || 0;
+          if (amt > currentCash) {
+            validationError.value = `Kulang ang Physical Cash on-hand! Mayroon ka lamang ₱${formatMoney(currentCash)}.`;
+          }
+        }
+      };
+
+      // SUMMARY WIDGET COMPUTATION
+      const currentSummary = computed(() => {
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const dayOfWeek = now.getDay();
+        const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek).getTime();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+        let filtered = transactions.value.filter(t => {
+          const txTime = t.id;
+          if (summaryRange.value === 'DAY') return txTime >= startOfDay;
+          if (summaryRange.value === 'WEEK') return txTime >= startOfWeek;
+          if (summaryRange.value === 'MONTH') return txTime >= startOfMonth;
+          return true;
+        });
+
+        let cIn = 0, cOut = 0, prf = 0, countIn = 0, countOut = 0;
+        filtered.forEach(t => {
+          const amt = Number(t.amount) || 0;
+          const fee = Number(t.fee) || 0;
+          if (t.type === 'CASH IN') { cIn += amt; countIn++; }
+          else if (t.type === 'CASH OUT') { cOut += amt; countOut++; }
+          prf += fee;
+        });
+
+        return { cashIn: cIn, cashOut: cOut, profit: prf, countIn, countOut };
+      });
+
+      // GROUPED BY DAY COMPUTATION
+      const groupedByDay = computed(() => {
+        const groups = {};
+
+        filteredList.value.forEach(tx => {
+          const dateStr = tx.date ? tx.date.split(',')[0] : 'Other Date';
+          if (!groups[dateStr]) {
+            groups[dateStr] = { dateLabel: dateStr, items: [], dayTotal: 0 };
+          }
+          groups[dateStr].items.push(tx);
+          groups[dateStr].dayTotal += Number(tx.amount) || 0;
+        });
+
+        return Object.values(groups);
+      });
+
+      // MODALS & NAVIGATION HELPERS
+      const selectDrawerTab = (tabName) => {
+        currentTab.value = tabName;
+        showDrawer.value = false;
+      };
+
+      const openFullScreenForm = () => {
+        isEditing.value = false;
+        validationError.value = '';
+        scanSuccessMessage.value = '';
+        form.value = {
+          id: null,
+          type: ['CASH IN', 'CASH OUT', 'PAYMENT', 'LOAD'].includes(currentTab.value) ? currentTab.value : 'CASH IN',
+          wallet: 'GCash #1',
+          amount: '',
+          fee: 0,
+          refNumber: '',
+          phone: '',
+          receipt: null,
+          status: 'UNCLAIMED'
+        };
+        autoCalculateFee();
+        showForm.value = true;
+      };
+
+      const openAdjustModal = (target) => {
+        adjustWalletTarget.value = target;
+        adjustAmount.value = '';
+        showAdjustModal.value = true;
+      };
+
+      const saveAdjustment = async () => {
+        if (!adjustAmount.value) return;
+        const payload = {
+          id: Date.now(),
+          type: 'ADD CAPITAL',
+          wallet: adjustWalletTarget.value,
+          amount: Number(adjustAmount.value),
+          fee: 0,
+          refNumber: 'ADJUSTMENT',
+          phone: '',
+          date: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        };
+
+        transactions.value = [payload, ...transactions.value];
+        showAdjustModal.value = false;
+        await pushToCloud();
+      };
+
+      const validateAndSaveTx = async () => {
+        checkValidation();
+        if (validationError.value) return;
+
+        const payload = {
+          ...form.value,
+          date: form.value.date || new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        };
+
+        if (isEditing.value) {
+          const idx = transactions.value.findIndex(t => t.id === payload.id);
+          if (idx !== -1) transactions.value[idx] = payload;
+        } else {
+          payload.id = Date.now();
+          transactions.value.unshift(payload);
+        }
+
+        showForm.value = false;
+        await pushToCloud();
+      };
+
+      const openTxDetail = (tx) => {
+        selectedTx.value = tx;
+        showDetailModal.value = true;
+      };
+
+      const editTxFromDetail = (tx) => {
+        form.value = { ...tx };
+        isEditing.value = true;
+        validationError.value = '';
+        scanSuccessMessage.value = '';
+        showDetailModal.value = false;
+        showForm.value = true;
+      };
+
+      const deleteTxFromDetail = async (id) => {
+        if (confirm("Sigurado ka bang gusto mong burahin ito? Automatic na mag-re-reverse ang balance.")) {
+          transactions.value = transactions.value.filter(t => t.id !== id);
+          showDetailModal.value = false;
+          await pushToCloud();
+        }
+      };
+
+      // NOTES ACTIONS
+      const openNoteModal = () => {
+        isEditingNote.value = false;
+        noteForm.value = { id: null, title: '', content: '' };
+        showNoteModal.value = true;
+      };
+
+      const saveNote = async () => {
+        if (!noteForm.value.title || !noteForm.value.content) return;
+        
+        if (isEditingNote.value) {
+          const idx = notes.value.findIndex(n => n.id === noteForm.value.id);
+          if (idx !== -1) {
+            notes.value[idx] = {
+              ...noteForm.value,
+              date: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+            };
+          }
+        } else {
+          notes.value.unshift({
+            id: Date.now(),
+            title: noteForm.value.title,
+            content: noteForm.value.content,
+            date: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+          });
+        }
+
+        showNoteModal.value = false;
+        await pushToCloud();
+      };
+
+      const editNote = (note) => {
+        noteForm.value = { ...note };
+        isEditingNote.value = true;
+        showNoteModal.value = true;
+      };
+
+      const deleteNote = async (id) => {
+        if (confirm("Gusto mo bang burahin ang note na ito?")) {
+          notes.value = notes.value.filter(n => n.id !== id);
+          await pushToCloud();
+        }
+      };
+
+      const viewReceipt = (url) => { activeReceipt.value = url; };
+
+      const filteredList = computed(() => {
+        let list = transactions.value;
+
+        if (searchQuery.value.trim()) {
+          const q = searchQuery.value.toLowerCase();
+          return list.filter(t => 
+            (t.refNumber && t.refNumber.toLowerCase().includes(q)) ||
+            (t.phone && t.phone.includes(q)) ||
+            (t.wallet && t.wallet.toLowerCase().includes(q)) ||
+            (t.date && t.date.toLowerCase().includes(q))
+          );
+        }
+
+        if (['CASH IN', 'CASH OUT', 'PAYMENT', 'LOAD'].includes(currentTab.value)) {
+          return list.filter(t => t.type === currentTab.value);
+        }
+
+        return list;
+      });
+
+      const adjustmentList = computed(() => {
+        return transactions.value.filter(t => t.type === 'ADD CAPITAL');
+      });
+
+      const profitBreakdown = computed(() => {
+        const breakdown = { cashIn: 0, cashOut: 0, load: 0, payment: 0 };
+        transactions.value.forEach(t => {
+          const fee = Number(t.fee) || 0;
+          if (t.type === 'CASH IN') breakdown.cashIn += fee;
+          if (t.type === 'CASH OUT') breakdown.cashOut += fee;
+          if (t.type === 'LOAD') breakdown.load += fee;
+          if (t.type === 'PAYMENT') breakdown.payment += fee;
+        });
+        return breakdown;
+      });
+
+      const formatMoney = (val) => Number(val || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      const getBadgeStyle = (type) => {
+        const map = {
+          'CASH IN': 'bg-blue-100 text-blue-700',
+          'CASH OUT': 'bg-rose-100 text-rose-700',
+          'PAYMENT': 'bg-purple-100 text-purple-700',
+          'LOAD': 'bg-amber-100 text-amber-700',
+          'ADD CAPITAL': 'bg-indigo-100 text-indigo-700'
+        };
+        return map[type] || 'bg-slate-100 text-slate-700';
+      };
+
+      return {
+        currentTab, searchQuery, showDrawer, showForm, showAdjustModal, showNoteModal, showDetailModal, selectedTx,
+        isEditing, isEditingNote, activeReceipt, validationError, summaryRange, isScanningReceipt, scanSuccessMessage,
+        form, noteForm, transactions, notes, adjustWalletTarget, adjustAmount,
+        isSynced, syncStatusText,
+        overallCapital, cashBalance, totalProfit, totalEWallet, walletBalances, filteredList, groupedByDay, adjustmentList, profitBreakdown, currentSummary,
+        handleImageUploadWithOCR, onAmountInput, onTypeOrWalletChange, openFullScreenForm, selectDrawerTab, openAdjustModal, openNoteModal, saveAdjustment, checkValidation, validateAndSaveTx, openTxDetail, editTxFromDetail, deleteTxFromDetail,
+        saveNote, editNote, deleteNote, viewReceipt, formatMoney, getBadgeStyle
+      };
+    }
+  }).mount('#app');
+</script>
+</body>
+</html>
